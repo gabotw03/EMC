@@ -250,6 +250,22 @@ tbody tr.drag-over{box-shadow:inset 0 2px 0 var(--blue),inset 0 -2px 0 var(--blu
 .move-btn{background:none;border:1px solid var(--gray-200);cursor:pointer;padding:3px 8px;border-radius:6px;font-size:14px;line-height:1;color:var(--gray-500);transition:background .15s}
 .move-btn:hover{background:var(--gray-100);border-color:var(--gray-300)}
 
+/* ── 收款設定 modal ── */
+.stages-cfg-row{display:grid;grid-template-columns:52px 1fr 90px 32px;gap:8px;align-items:center;margin-bottom:8px}
+.stages-cfg-lbl{font-size:12px;font-weight:700;color:var(--gray-500);text-align:center}
+.stages-cfg-pct{display:flex;align-items:center;gap:4px}
+.stages-cfg-pct input{width:52px;padding:8px 6px;border:1.5px solid var(--gray-200);border-radius:var(--rs);font-size:14px;font-weight:700;text-align:right;font-family:inherit;outline:none;-webkit-appearance:none;background:#fff;transition:border-color .15s}
+.stages-cfg-pct input:focus{border-color:var(--blue);box-shadow:0 0 0 3px var(--blue-light)}
+.stages-cfg-pct input:disabled{background:var(--gray-100);color:var(--gray-400)}
+.stages-cfg-pct .pct-sym{font-size:12px;color:var(--gray-500);font-weight:600}
+.cfg-del-btn{background:none;border:none;cursor:pointer;width:28px;height:28px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:14px;color:var(--gray-400);transition:background .15s}
+.cfg-del-btn:hover{background:var(--red-light);color:var(--red)}
+.stages-cfg-total{font-size:12px;color:var(--gray-500);text-align:center;padding:8px 0 0;border-top:1px solid var(--gray-100);margin-top:4px}
+.stages-cfg-total .warn{color:var(--red);font-weight:700}
+.stages-cfg-total .ok{color:var(--green);font-weight:700}
+.btn-add-stage{background:var(--gray-50);border:1.5px dashed var(--gray-300);color:var(--gray-500);padding:7px 14px;border-radius:var(--rs);font-size:13px;font-weight:600;cursor:pointer;width:100%;text-align:center;transition:border-color .15s,color .15s;margin-top:4px}
+.btn-add-stage:hover{border-color:var(--blue);color:var(--blue)}
+
 @media(max-width:599px){
   .trades-table-wrap{overflow-x:unset}
   table,thead,tbody,tr,td,th{display:block}
@@ -444,7 +460,10 @@ textarea{resize:vertical;min-height:56px}
     <div class="recv-card">
       <div class="recv-card-title">
         業主收款進度
-        <span id="recv-summary-text"></span>
+        <span style="display:flex;align-items:center;gap:8px">
+          <span id="recv-summary-text"></span>
+          <button onclick="openStagesCfg()" style="background:var(--gray-100);border:none;cursor:pointer;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:700;color:var(--gray-500);transition:background .15s" onmouseover="this.style.background='var(--gray-200)'" onmouseout="this.style.background='var(--gray-100)'">⚙️ 編輯期數</button>
+        </span>
       </div>
       <div class="stage-grid" id="stage-grid"></div>
       <div class="recv-progress-wrap">
@@ -592,6 +611,31 @@ textarea{resize:vertical;min-height:56px}
   </div>
 </div>
 
+<!-- ═══ MODAL: 收款期數設定 ═══ -->
+<div class="backdrop" id="stages-cfg-bd" onclick="closeStageCfgBd(event)">
+  <div class="modal">
+    <div class="modal-hdr">
+      <span class="modal-title">收款期數設定</span>
+      <button class="modal-x" onclick="closeStagesCfg()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div style="display:grid;grid-template-columns:52px 1fr 90px 32px;gap:8px;margin-bottom:6px">
+        <div style="font-size:10px;font-weight:700;color:var(--gray-400);text-align:center">期</div>
+        <div style="font-size:10px;font-weight:700;color:var(--gray-400)">名稱</div>
+        <div style="font-size:10px;font-weight:700;color:var(--gray-400)">收款比例</div>
+        <div></div>
+      </div>
+      <div id="stages-cfg-rows"></div>
+      <button class="btn-add-stage" onclick="addStageCfgRow()">＋ 新增期數</button>
+      <div class="stages-cfg-total" id="stages-cfg-total"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn-cancel" onclick="closeStagesCfg()">取消</button>
+      <button class="btn-save" onclick="saveStagesCfg()">儲存</button>
+    </div>
+  </div>
+</div>
+
 <!-- ═══ CONFIRM ═══ -->
 <div class="confirm-bd" id="confirm-bd">
   <div class="confirm-box">
@@ -627,12 +671,21 @@ const LS   = 'reno_v6_cache';
 // ══════════════════════════
 //  CONSTANTS
 // ══════════════════════════
-const STAGES = [
-  { label:'第一期', sub:'訂金',   pct:0.40 },
-  { label:'第二期', sub:'油漆前', pct:0.20 },
-  { label:'第三期', sub:'系統前', pct:0.30 },
-  { label:'第四期', sub:'尾款',   pct:null  }, // 尾款 = 餘數
+const DEFAULT_STAGES_CFG = [
+  { sub:'訂金',   pct:0.40 },
+  { sub:'油漆前', pct:0.20 },
+  { sub:'系統前', pct:0.30 },
+  { sub:'尾款',   pct:null }, // 尾款 = 餘數
 ];
+// 保留舊名稱供少數地方相容
+const STAGES = DEFAULT_STAGES_CFG.map((s,i) => ({ label:`第${['一','二','三','四','五','六','七','八','九','十'][i]||i+1}期`, ...s }));
+const STAGE_NUMS = ['一','二','三','四','五','六','七','八','九','十'];
+function stageLabel(i) { return `第${STAGE_NUMS[i]||i+1}期`; }
+// 取得案場的收款設定（含自動補 label）
+function getSiteStagesConfig(site) {
+  const raw = (site.stagesConfig && site.stagesConfig.length) ? site.stagesConfig : DEFAULT_STAGES_CFG;
+  return raw.map((s, i) => ({ label: stageLabel(i), sub: s.sub, pct: s.pct }));
+}
 const SUPERVISION_PCT = 0.05; // 監造營銷 5%
 
 // ══════════════════════════
@@ -661,21 +714,26 @@ function calcFinalPrice(totalQuote, discount) {
   return totalQuote + calcSupervision(totalQuote) - (parseFloat(discount) || 0);
 }
 
-// 各期金額
-// 前三期：以 basePrice（不含追加減）為基礎，捨去後三位
-// 尾款 = 最終價格（含追加減）- 前三期總和
-function calcStageAmounts(finalPrice, basePrice) {
+// 各期金額（config = getSiteStagesConfig 的結果）
+// 非末期：以 basePrice 為基礎，捨去後三位
+// 末期（尾款）= 最終價格（含追加減）- 前面各期總和
+function calcStageAmounts(finalPrice, basePrice, config) {
+  const cfg  = config || STAGES;
   const base = (basePrice !== undefined) ? basePrice : finalPrice;
-  const s1 = trunc1k(base * 0.40);
-  const s2 = trunc1k(base * 0.20);
-  const s3 = trunc1k(base * 0.30);
-  const s4 = finalPrice - s1 - s2 - s3; // 尾款含追加減
-  return [s1, s2, s3, s4];
+  const amounts = [];
+  let allocated = 0;
+  for (let i = 0; i < cfg.length - 1; i++) {
+    const amt = trunc1k(base * (cfg[i].pct || 0));
+    amounts.push(amt);
+    allocated += amt;
+  }
+  amounts.push(finalPrice - allocated); // 末期 = 餘數
+  return amounts;
 }
 
-function calcRecv(finalPrice, stages, basePrice) {
-  const amts = calcStageAmounts(finalPrice, basePrice);
-  return (stages || []).reduce((s, paid, i) => s + (paid ? amts[i] : 0), 0);
+function calcRecv(finalPrice, stages, basePrice, config) {
+  const amts = calcStageAmounts(finalPrice, basePrice, config);
+  return (stages || []).reduce((s, paid, i) => s + (paid ? (amts[i]||0) : 0), 0);
 }
 
 function siteTotals(site) {
@@ -684,13 +742,14 @@ function siteTotals(site) {
   trades.forEach(t => { quote += parseFloat(t.quote)||0; cost += parseFloat(t.cost)||0; });
   const discount        = parseFloat(site.discount) || 0;
   const supervision     = calcSupervision(quote);
-  const basePrice       = quote + supervision - discount; // 原始最終價格（不含追加減）
+  const basePrice       = quote + supervision - discount;
   const changeOrdersNet = (site.changeOrders||[]).reduce((s, co) => s + (parseFloat(co.amount)||0), 0);
   const finalPrice      = basePrice + changeOrdersNet;
-  const recv            = calcRecv(finalPrice, site.stages, basePrice);
+  const config          = getSiteStagesConfig(site);
+  const recv            = calcRecv(finalPrice, site.stages, basePrice, config);
   const pending         = finalPrice - recv;
   const profit          = finalPrice - cost;
-  return { quote, cost, supervision, discount, basePrice, changeOrdersNet, finalPrice, recv, pending, profit, count: trades.length };
+  return { quote, cost, supervision, discount, basePrice, changeOrdersNet, finalPrice, recv, pending, profit, count: trades.length, config };
 }
 
 // ══════════════════════════
@@ -774,15 +833,19 @@ function goDetail(id) { currentSiteId = id;   renderDetail(); showPage('page-det
 // ══════════════════════════
 //  RENDER LIST
 // ══════════════════════════
-function isClosed(site) { return !!(site.stages && site.stages[3]); }
+function isClosed(site) {
+  const config = getSiteStagesConfig(site);
+  return !!(site.stages && site.stages[config.length - 1]);
+}
 
 function siteCardHTML(site) {
   const t = siteTotals(site);
   const closed = isClosed(site);
+  const config = t.config;
   const pCls = t.profit > 0 ? 'pos' : t.profit < 0 ? 'neg' : 'zero';
   const pLbl = t.profit > 0 ? `毛利 ${fmt(t.profit)}` : t.profit < 0 ? `虧損 ${fmt(Math.abs(t.profit))}` : '毛利 $0';
-  const strip = STAGES.map((_,i) => `<div class="card-stage-blk ${(site.stages||[])[i]?'done':''}"></div>`).join('');
-  const doneCount = STAGES.filter((_,i) => (site.stages||[])[i]).length;
+  const strip = config.map((_,i) => `<div class="card-stage-blk ${(site.stages||[])[i]?'done':''}"></div>`).join('');
+  const doneCount = config.filter((_,i) => (site.stages||[])[i]).length;
   return `
   <div class="site-card${closed?' closed':''}" onclick="goDetail('${site.id}')">
     <div class="site-card-bar"></div>
@@ -913,12 +976,13 @@ function onDiscountChange() {
 }
 
 function renderStageTiles(site, finalPrice, basePrice) {
-  const stages = site.stages || [false,false,false,false];
-  const amts   = calcStageAmounts(finalPrice, basePrice);
+  const config = getSiteStagesConfig(site);
+  const stages = site.stages || new Array(config.length).fill(false);
+  const amts   = calcStageAmounts(finalPrice, basePrice, config);
   const recv   = amts.reduce((s, a, i) => s + ((stages[i] ? a : 0)), 0);
   const pct    = finalPrice ? Math.round(recv / finalPrice * 100) : 0;
 
-  document.getElementById('stage-grid').innerHTML = STAGES.map((st, i) => {
+  document.getElementById('stage-grid').innerHTML = config.map((st, i) => {
     const done = stages[i];
     const pctLabel = st.pct ? Math.round(st.pct*100)+'%' : '餘款';
     return `<div class="stage-tile ${done?'done':''}" onclick="toggleSiteStage(${i})">
@@ -934,7 +998,7 @@ function renderStageTiles(site, finalPrice, basePrice) {
   document.getElementById('recv-prog-amt').textContent   = fmt(recv);
   document.getElementById('recv-prog-total').textContent = fmt(finalPrice);
   document.getElementById('recv-prog-pend').textContent  = finalPrice - recv > 0 ? `待收 ${fmt(finalPrice-recv)}` : '✓ 全部收清';
-  document.getElementById('recv-summary-text').textContent = `${stages.filter(Boolean).length} / 4 期已收`;
+  document.getElementById('recv-summary-text').textContent = `${stages.filter(Boolean).length} / ${config.length} 期已收`;
 }
 
 function renderTradesTable(site) {
@@ -1002,14 +1066,16 @@ function renderTradesTable(site) {
 // ══════════════════════════
 function toggleSiteStage(i) {
   const site = currentSite(); if (!site) return;
-  if (!site.stages) site.stages = [false,false,false,false];
+  const config = getSiteStagesConfig(site);
+  if (!site.stages) site.stages = new Array(config.length).fill(false);
   site.stages[i] = !site.stages[i];
   save();
   const t = siteTotals(site);
   renderStageTiles(site, t.finalPrice, t.basePrice);
   document.getElementById('s-recv').textContent = fmt(t.recv);
   document.getElementById('s-pend').textContent = `待收 ${fmt(t.pending)}`;
-  showToast(site.stages[i] ? `✅ ${STAGES[i].label}・${STAGES[i].sub} 已收款` : `↩️ ${STAGES[i].label}・${STAGES[i].sub} 取消`);
+  const st = config[i] || {};
+  showToast(site.stages[i] ? `✅ ${st.label}・${st.sub} 已收款` : `↩️ ${st.label}・${st.sub} 取消`);
 }
 
 // ══════════════════════════
@@ -1123,7 +1189,8 @@ function exportSiteCSV() {
   const site = currentSite();
   if (!site || !(site.trades||[]).length) { showToast('⚠️ 尚無資料'); return; }
   const t = siteTotals(site);
-  const amts = calcStageAmounts(t.finalPrice);
+  const config = getSiteStagesConfig(site);
+  const amts = calcStageAmounts(t.finalPrice, t.basePrice, config);
   const hdrs = ['案場','項目','金額','備註'];
   const rows = [
     [site.name,'工程總價',    t.quote,       ''],
@@ -1131,7 +1198,7 @@ function exportSiteCSV() {
     [site.name,'折抵金額',   -t.discount,    ''],
     [site.name,'最終價格',    t.finalPrice,  ''],
     ['','','',''],
-    ...STAGES.map((st,i) => [site.name,`${st.label}・${st.sub}`,amts[i],(site.stages||[])[i]?'已收':'未收']),
+    ...config.map((st,i) => [site.name,`${st.label}・${st.sub}`,amts[i],(site.stages||[])[i]?'已收':'未收']),
     ['','','',''],
     ...(site.trades||[]).map(tr => {
       const q=parseFloat(tr.quote)||0,c=parseFloat(tr.cost)||0,p=q-c;
@@ -1171,6 +1238,116 @@ function showToast(msg) {
   const el = document.getElementById('toast');
   el.textContent = msg; el.classList.add('show');
   clearTimeout(toastT); toastT = setTimeout(() => el.classList.remove('show'), 2200);
+}
+
+// ══════════════════════════
+//  STAGES CONFIG（收款期數設定）
+// ══════════════════════════
+function openStagesCfg() {
+  const site = currentSite(); if (!site) return;
+  const config = getSiteStagesConfig(site);
+  // 存原始格式 (不含 label) 到暫存
+  _stageCfgDraft = config.map(s => ({ sub: s.sub, pct: s.pct }));
+  renderStageCfgRows();
+  document.getElementById('stages-cfg-bd').classList.add('open');
+}
+function closeStagesCfg()   { document.getElementById('stages-cfg-bd').classList.remove('open'); }
+function closeStageCfgBd(e) { if (e.target === document.getElementById('stages-cfg-bd')) closeStagesCfg(); }
+
+let _stageCfgDraft = [];
+
+function renderStageCfgRows() {
+  const rows = document.getElementById('stages-cfg-rows');
+  rows.innerHTML = _stageCfgDraft.map((s, i) => {
+    const isLast = i === _stageCfgDraft.length - 1;
+    return `<div class="stages-cfg-row" id="scr-${i}">
+      <div class="stages-cfg-lbl">${stageLabel(i)}</div>
+      <input type="text" value="${esc(s.sub)}" placeholder="名稱" maxlength="12"
+        style="padding:8px 10px;border:1.5px solid var(--gray-200);border-radius:var(--rs);font-size:14px;font-family:inherit;outline:none;transition:border-color .15s"
+        onfocus="this.style.borderColor='var(--blue)'" onblur="this.style.borderColor='var(--gray-200)'"
+        oninput="updateStageCfgRow(${i})">
+      <div class="stages-cfg-pct">
+        <input type="number" min="0" max="100" step="1"
+          value="${isLast ? '' : (s.pct != null ? Math.round(s.pct*100) : '')}"
+          placeholder="${isLast ? '—' : '0'}" ${isLast?'disabled':''}
+          oninput="updateStageCfgRow(${i})">
+        <span class="pct-sym">${isLast ? '' : '%'}</span>
+      </div>
+      <button class="cfg-del-btn" onclick="deleteStageCfgRow(${i})" title="刪除此期">🗑</button>
+    </div>`;
+  }).join('');
+  updateStageCfgTotal();
+}
+
+function getRowValues(i) {
+  const row = document.getElementById(`scr-${i}`);
+  if (!row) return null;
+  const inputs = row.querySelectorAll('input');
+  const sub = inputs[0].value.trim();
+  const pct = inputs[1].disabled ? null : (parseFloat(inputs[1].value) / 100 || 0);
+  return { sub, pct };
+}
+
+function updateStageCfgRow(i) {
+  const v = getRowValues(i); if (!v) return;
+  _stageCfgDraft[i] = { ..._stageCfgDraft[i], sub: v.sub, pct: _stageCfgDraft[i].pct != null ? v.pct : null };
+  updateStageCfgTotal();
+}
+
+function updateStageCfgTotal() {
+  // Collect from DOM
+  const totalPct = _stageCfgDraft.slice(0, -1).reduce((s, _, i) => {
+    const row = document.getElementById(`scr-${i}`);
+    if (!row) return s;
+    const inp = row.querySelectorAll('input')[1];
+    return s + (parseFloat(inp && inp.value) || 0);
+  }, 0);
+  const remainder = 100 - totalPct;
+  const el = document.getElementById('stages-cfg-total');
+  const warn = totalPct > 100;
+  el.innerHTML = warn
+    ? `<span class="warn">⚠️ 超過 100%，請調整比例</span>`
+    : `前 ${_stageCfgDraft.length-1} 期合計 <span class="ok">${totalPct}%</span>，尾款（餘款）= <strong>${remainder}%</strong>`;
+}
+
+function addStageCfgRow() {
+  // Flush current DOM values before adding
+  _stageCfgDraft.slice(0, -1).forEach((_, i) => {
+    const v = getRowValues(i); if (v) { _stageCfgDraft[i].sub = v.sub; _stageCfgDraft[i].pct = v.pct; }
+  });
+  // Insert new row before last (尾款)
+  const last = _stageCfgDraft.pop();
+  _stageCfgDraft.push({ sub: '', pct: 0 });
+  _stageCfgDraft.push(last);
+  renderStageCfgRows();
+}
+
+function deleteStageCfgRow(i) {
+  if (_stageCfgDraft.length <= 1) { showToast('⚠️ 至少保留一期'); return; }
+  _stageCfgDraft.forEach((_, j) => { const v = getRowValues(j); if (v) { _stageCfgDraft[j].sub = v.sub; _stageCfgDraft[j].pct = _stageCfgDraft[j].pct != null ? v.pct : null; } });
+  _stageCfgDraft.splice(i, 1);
+  // 保持最後一期為餘款
+  _stageCfgDraft[_stageCfgDraft.length - 1].pct = null;
+  renderStageCfgRows();
+}
+
+function saveStagesCfg() {
+  // Flush DOM values
+  _stageCfgDraft.forEach((_, i) => {
+    const v = getRowValues(i);
+    if (v) { _stageCfgDraft[i].sub = v.sub; _stageCfgDraft[i].pct = i === _stageCfgDraft.length - 1 ? null : v.pct; }
+  });
+  const totalPct = _stageCfgDraft.slice(0, -1).reduce((s, s2) => s + (s2.pct || 0), 0);
+  if (totalPct > 1.001) { showToast('⚠️ 總比例超過 100%，請調整'); return; }
+  const site = currentSite(); if (!site) return;
+  const oldLen = getSiteStagesConfig(site).length;
+  site.stagesConfig = _stageCfgDraft.map(s => ({ sub: s.sub || '未命名', pct: s.pct }));
+  // 調整 stages 布林陣列長度
+  if (!site.stages) site.stages = [];
+  while (site.stages.length < site.stagesConfig.length) site.stages.push(false);
+  if (site.stages.length > site.stagesConfig.length) site.stages = site.stages.slice(0, site.stagesConfig.length);
+  save(); closeStagesCfg(); renderDetail();
+  showToast('✅ 收款期數已更新');
 }
 
 // ══════════════════════════
