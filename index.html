@@ -98,6 +98,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang TC","Micr
 .profit-chip.pos{background:var(--green-light);color:var(--green)}
 .profit-chip.neg{background:var(--red-light);color:var(--red)}
 .profit-chip.zero{background:var(--gray-100);color:var(--gray-500)}
+.status-chip{font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px}
+.status-chip.ongoing{background:var(--blue-light);color:var(--blue)}
+.status-chip.closed{background:var(--green-light);color:var(--green-dark)}
+.site-card.closed .site-card-bar{background:linear-gradient(90deg,#16a34a,#4ade80)}
+.site-card.closed{opacity:.82}
+.list-section-lbl{font-size:11px;font-weight:700;color:var(--gray-400);letter-spacing:.5px;padding:6px 2px 2px;grid-column:1/-1}
 
 .add-site-card{background:#fff;border-radius:var(--r);box-shadow:var(--sh);cursor:pointer;border:2px dashed var(--gray-200);display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:160px;gap:8px;color:var(--gray-400);padding:24px;transition:border-color .15s,color .15s,box-shadow .15s}
 .add-site-card:hover{border-color:var(--blue);color:var(--blue);box-shadow:var(--shm)}
@@ -398,6 +404,14 @@ textarea{resize:vertical;min-height:56px}
               placeholder="0" min="0" oninput="onDiscountChange()">
           </div>
         </div>
+        <!-- 追加減淨額 -->
+        <div class="price-row" id="p-co-row" style="display:none">
+          <span class="price-row-label">
+            追加減淨額
+            <span class="tag" id="p-co-tag">追加減</span>
+          </span>
+          <span class="price-row-val" id="p-co-net">—</span>
+        </div>
       </div>
       <div class="price-final-row">
         <span class="price-final-label">🎯 最終價格</span>
@@ -648,17 +662,19 @@ function calcFinalPrice(totalQuote, discount) {
 }
 
 // 各期金額
-// 前三期：捨去後三位；尾款 = 最終價格 - 前三期總和
-function calcStageAmounts(finalPrice) {
-  const s1 = trunc1k(finalPrice * 0.40);
-  const s2 = trunc1k(finalPrice * 0.20);
-  const s3 = trunc1k(finalPrice * 0.30);
-  const s4 = finalPrice - s1 - s2 - s3;
+// 前三期：以 basePrice（不含追加減）為基礎，捨去後三位
+// 尾款 = 最終價格（含追加減）- 前三期總和
+function calcStageAmounts(finalPrice, basePrice) {
+  const base = (basePrice !== undefined) ? basePrice : finalPrice;
+  const s1 = trunc1k(base * 0.40);
+  const s2 = trunc1k(base * 0.20);
+  const s3 = trunc1k(base * 0.30);
+  const s4 = finalPrice - s1 - s2 - s3; // 尾款含追加減
   return [s1, s2, s3, s4];
 }
 
-function calcRecv(finalPrice, stages, discount) {
-  const amts = calcStageAmounts(finalPrice);
+function calcRecv(finalPrice, stages, basePrice) {
+  const amts = calcStageAmounts(finalPrice, basePrice);
   return (stages || []).reduce((s, paid, i) => s + (paid ? amts[i] : 0), 0);
 }
 
@@ -666,13 +682,15 @@ function siteTotals(site) {
   const trades = site.trades || [];
   let quote = 0, cost = 0;
   trades.forEach(t => { quote += parseFloat(t.quote)||0; cost += parseFloat(t.cost)||0; });
-  const discount    = parseFloat(site.discount) || 0;
-  const supervision = calcSupervision(quote);
-  const finalPrice  = quote + supervision - discount;
-  const recv        = calcRecv(finalPrice, site.stages);
-  const pending     = finalPrice - recv;
-  const profit      = finalPrice - cost;
-  return { quote, cost, supervision, discount, finalPrice, recv, pending, profit, count: trades.length };
+  const discount        = parseFloat(site.discount) || 0;
+  const supervision     = calcSupervision(quote);
+  const basePrice       = quote + supervision - discount; // 原始最終價格（不含追加減）
+  const changeOrdersNet = (site.changeOrders||[]).reduce((s, co) => s + (parseFloat(co.amount)||0), 0);
+  const finalPrice      = basePrice + changeOrdersNet;
+  const recv            = calcRecv(finalPrice, site.stages, basePrice);
+  const pending         = finalPrice - recv;
+  const profit          = finalPrice - cost;
+  return { quote, cost, supervision, discount, basePrice, changeOrdersNet, finalPrice, recv, pending, profit, count: trades.length };
 }
 
 // ══════════════════════════
@@ -756,43 +774,59 @@ function goDetail(id) { currentSiteId = id;   renderDetail(); showPage('page-det
 // ══════════════════════════
 //  RENDER LIST
 // ══════════════════════════
+function isClosed(site) { return !!(site.stages && site.stages[3]); }
+
+function siteCardHTML(site) {
+  const t = siteTotals(site);
+  const closed = isClosed(site);
+  const pCls = t.profit > 0 ? 'pos' : t.profit < 0 ? 'neg' : 'zero';
+  const pLbl = t.profit > 0 ? `毛利 ${fmt(t.profit)}` : t.profit < 0 ? `虧損 ${fmt(Math.abs(t.profit))}` : '毛利 $0';
+  const strip = STAGES.map((_,i) => `<div class="card-stage-blk ${(site.stages||[])[i]?'done':''}"></div>`).join('');
+  const doneCount = STAGES.filter((_,i) => (site.stages||[])[i]).length;
+  return `
+  <div class="site-card${closed?' closed':''}" onclick="goDetail('${site.id}')">
+    <div class="site-card-bar"></div>
+    <div class="site-card-body">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+        <div class="site-card-name" style="margin-bottom:0;flex:1">${esc(site.name)}</div>
+        <span class="status-chip ${closed?'closed':'ongoing'}">${closed?'已結案':'進行中'}</span>
+      </div>
+      <div class="site-stats">
+        <div class="site-stat">
+          <div class="site-stat-lbl">最終價格</div>
+          <div class="site-stat-val">${fmt(t.finalPrice)}</div>
+        </div>
+        <div class="site-stat">
+          <div class="site-stat-lbl">${closed?'已收款':'待收款'}</div>
+          <div class="site-stat-val" style="color:${closed?'var(--green)':t.pending>0?'var(--orange)':'var(--green)'}">${closed?fmt(t.recv):fmt(t.pending)}</div>
+        </div>
+      </div>
+      <div style="margin-top:8px">
+        <div style="font-size:10px;color:var(--gray-400);font-weight:600;margin-bottom:4px">收款進度 ${doneCount}/4 期</div>
+        <div class="card-stage-strip">${strip}</div>
+      </div>
+    </div>
+    <div class="site-card-foot">
+      <span class="site-trades-lbl">${t.count} 項工種</span>
+      <span class="profit-chip ${pCls}">${pLbl}</span>
+    </div>
+  </div>`;
+}
+
 function renderList() {
   const grid = document.getElementById('sites-grid');
+  const ongoing  = db.sites.filter(s => !isClosed(s));
+  const closed   = db.sites.filter(s =>  isClosed(s));
+  const total    = db.sites.length;
   document.getElementById('hdr-count').textContent =
-    db.sites.length ? `共 ${db.sites.length} 個案場` : '點擊 ＋ 建立第一個案場';
+    total ? `${ongoing.length} 進行中 · ${closed.length} 已結案` : '點擊 ＋ 建立第一個案場';
 
-  let html = db.sites.map(site => {
-    const t = siteTotals(site);
-    const pCls = t.profit > 0 ? 'pos' : t.profit < 0 ? 'neg' : 'zero';
-    const pLbl = t.profit > 0 ? `毛利 ${fmt(t.profit)}` : t.profit < 0 ? `虧損 ${fmt(Math.abs(t.profit))}` : '毛利 $0';
-    const strip = STAGES.map((_,i) => `<div class="card-stage-blk ${(site.stages||[])[i]?'done':''}"></div>`).join('');
-    const doneCount = STAGES.filter((_,i) => (site.stages||[])[i]).length;
-    return `
-    <div class="site-card" onclick="goDetail('${site.id}')">
-      <div class="site-card-bar"></div>
-      <div class="site-card-body">
-        <div class="site-card-name">${esc(site.name)}</div>
-        <div class="site-stats">
-          <div class="site-stat">
-            <div class="site-stat-lbl">最終價格</div>
-            <div class="site-stat-val">${fmt(t.finalPrice)}</div>
-          </div>
-          <div class="site-stat">
-            <div class="site-stat-lbl">待收款</div>
-            <div class="site-stat-val" style="color:${t.pending>0?'var(--orange)':'var(--green)'}">${fmt(t.pending)}</div>
-          </div>
-        </div>
-        <div style="margin-top:8px">
-          <div style="font-size:10px;color:var(--gray-400);font-weight:600;margin-bottom:4px">收款進度 ${doneCount}/4 期</div>
-          <div class="card-stage-strip">${strip}</div>
-        </div>
-      </div>
-      <div class="site-card-foot">
-        <span class="site-trades-lbl">${t.count} 項工種</span>
-        <span class="profit-chip ${pCls}">${pLbl}</span>
-      </div>
-    </div>`;
-  }).join('');
+  let html = '';
+  if (ongoing.length) html += ongoing.map(siteCardHTML).join('');
+  if (closed.length) {
+    html += `<div class="list-section-lbl">── 已結案 ──</div>`;
+    html += closed.map(siteCardHTML).join('');
+  }
   html += `<div class="add-site-card" onclick="openAddSite()"><div class="plus">＋</div><div class="lbl">新增案場</div></div>`;
   grid.innerHTML = html;
 }
@@ -822,6 +856,20 @@ function renderDetail() {
   document.getElementById('p-base').textContent       = fmt(t.quote);
   document.getElementById('p-supervision').textContent = '+' + fmt(t.supervision);
   document.getElementById('p-final').textContent      = fmt(t.finalPrice);
+  // 追加減淨額列
+  const coRow = document.getElementById('p-co-row');
+  const coNet = t.changeOrdersNet || 0;
+  if (coNet !== 0) {
+    coRow.style.display = '';
+    const tagEl = document.getElementById('p-co-tag');
+    tagEl.textContent = coNet >= 0 ? '追加' : '減項';
+    tagEl.className   = 'tag ' + (coNet >= 0 ? 'tag-add' : 'tag-sub');
+    const netEl = document.getElementById('p-co-net');
+    netEl.textContent = (coNet >= 0 ? '+' : '') + fmt(coNet);
+    netEl.className   = 'price-row-val ' + (coNet >= 0 ? 'add' : 'sub');
+  } else {
+    coRow.style.display = 'none';
+  }
   // 折抵輸入欄
   const discEl = document.getElementById('discount-input');
   if (document.activeElement !== discEl) {
@@ -832,7 +880,7 @@ function renderDetail() {
   renderExtraFees(site);
 
   // 收款四期
-  renderStageTiles(site, t.finalPrice);
+  renderStageTiles(site, t.finalPrice, t.basePrice);
 
   // 工種表
   renderTradesTable(site);
@@ -858,15 +906,15 @@ function onDiscountChange() {
   const mEl = document.getElementById('s-margin');
   mEl.textContent = `毛利率 ${t.finalPrice ? (t.profit/t.finalPrice*100).toFixed(1) : 0}%`;
   mEl.className = 'sum-sub ' + (t.profit >= 0 ? 'pos' : 'neg');
-  renderStageTiles(site, t.finalPrice);
+  renderStageTiles(site, t.finalPrice, t.basePrice);
   // debounce save
   clearTimeout(discountTimer);
   discountTimer = setTimeout(() => save(), 600);
 }
 
-function renderStageTiles(site, finalPrice) {
+function renderStageTiles(site, finalPrice, basePrice) {
   const stages = site.stages || [false,false,false,false];
-  const amts   = calcStageAmounts(finalPrice);
+  const amts   = calcStageAmounts(finalPrice, basePrice);
   const recv   = amts.reduce((s, a, i) => s + ((stages[i] ? a : 0)), 0);
   const pct    = finalPrice ? Math.round(recv / finalPrice * 100) : 0;
 
@@ -958,7 +1006,7 @@ function toggleSiteStage(i) {
   site.stages[i] = !site.stages[i];
   save();
   const t = siteTotals(site);
-  renderStageTiles(site, t.finalPrice);
+  renderStageTiles(site, t.finalPrice, t.basePrice);
   document.getElementById('s-recv').textContent = fmt(t.recv);
   document.getElementById('s-pend').textContent = `待收 ${fmt(t.pending)}`;
   showToast(site.stages[i] ? `✅ ${STAGES[i].label}・${STAGES[i].sub} 已收款` : `↩️ ${STAGES[i].label}・${STAGES[i].sub} 取消`);
