@@ -1,0 +1,1292 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>裝修工程成本管理</title>
+
+<!-- Firebase SDK -->
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+
+<style>
+:root {
+  --blue:        #2563eb;
+  --blue-dark:   #1d4ed8;
+  --blue-light:  #dbeafe;
+  --green:       #16a34a;
+  --green-dark:  #15803d;
+  --green-light: #dcfce7;
+  --orange:      #d97706;
+  --orange-light:#fef3c7;
+  --red:         #dc2626;
+  --red-light:   #fee2e2;
+  --purple:      #7c3aed;
+  --purple-light:#ede9fe;
+  --gray-50:  #f9fafb;
+  --gray-100: #f3f4f6;
+  --gray-200: #e5e7eb;
+  --gray-300: #d1d5db;
+  --gray-400: #9ca3af;
+  --gray-500: #6b7280;
+  --gray-600: #4b5563;
+  --gray-700: #374151;
+  --gray-800: #1f2937;
+  --gray-900: #111827;
+  --r:  12px;
+  --rs: 8px;
+  --sh: 0 1px 3px rgba(0,0,0,.1),0 1px 2px rgba(0,0,0,.06);
+  --shm:0 4px 6px rgba(0,0,0,.07),0 2px 4px rgba(0,0,0,.06);
+  --shl:0 10px 25px rgba(0,0,0,.12),0 4px 8px rgba(0,0,0,.06);
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang TC","Microsoft JhengHei",sans-serif;background:var(--gray-100);color:var(--gray-800);min-height:100vh;font-size:15px}
+.page{display:none;flex-direction:column;min-height:100vh}
+.page.active{display:flex}
+
+/* ── 載入 ── */
+#loading-screen{position:fixed;inset:0;background:#fff;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px}
+#loading-screen.hidden{display:none}
+.spinner{width:40px;height:40px;border:3px solid var(--gray-200);border-top-color:var(--blue);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.loading-text{font-size:14px;color:var(--gray-500)}
+
+/* ── 同步狀態 ── */
+.sync-bar{display:none;align-items:center;gap:6px;position:fixed;bottom:16px;right:16px;z-index:500;background:var(--gray-900);color:#fff;padding:8px 14px;border-radius:20px;font-size:12px;font-weight:600;box-shadow:var(--shl);transition:opacity .3s}
+.sync-bar.show{display:flex}
+.sync-bar.saving .sync-dot{background:var(--orange);animation:pulse .8s infinite}
+.sync-bar.saved  .sync-dot{background:var(--green)}
+.sync-bar.error  .sync-dot{background:var(--red)}
+.sync-dot{width:7px;height:7px;border-radius:50%;background:var(--gray-400)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+
+/* ── HEADER ── */
+.app-header{background:linear-gradient(135deg,#1e3a8a 0%,#2563eb 100%);color:#fff;padding:16px 18px;position:sticky;top:0;z-index:100;box-shadow:var(--shm);display:flex;align-items:center;gap:12px}
+.header-back{background:rgba(255,255,255,.18);border:none;color:#fff;width:36px;height:36px;border-radius:9px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;transition:background .15s}
+.header-back:hover{background:rgba(255,255,255,.28)}
+.header-center{flex:1;min-width:0}
+.header-center h1{font-size:17px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.header-center p{font-size:12px;opacity:.7;margin-top:2px}
+.header-actions{display:flex;gap:8px;flex-shrink:0}
+.btn-hdr{background:rgba(255,255,255,.18);border:none;color:#fff;width:36px;height:36px;border-radius:9px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:16px;transition:background .15s}
+.btn-hdr:hover{background:rgba(255,255,255,.28)}
+
+.content{flex:1;padding:16px;max-width:1000px;margin:0 auto;width:100%}
+@media(min-width:640px){.content{padding:20px}}
+
+/* ══ 案場列表 ══ */
+.sites-grid{display:grid;gap:12px;grid-template-columns:1fr}
+@media(min-width:480px){.sites-grid{grid-template-columns:1fr 1fr}}
+@media(min-width:780px){.sites-grid{grid-template-columns:repeat(3,1fr)}}
+
+.site-card{background:#fff;border-radius:var(--r);box-shadow:var(--sh);cursor:pointer;transition:box-shadow .15s,transform .1s;overflow:hidden;display:flex;flex-direction:column}
+.site-card:hover{box-shadow:var(--shm);transform:translateY(-1px)}
+.site-card:active{transform:scale(.98)}
+.site-card-bar{height:4px;background:linear-gradient(90deg,#2563eb,#60a5fa)}
+.site-card-body{padding:16px;flex:1}
+.site-card-name{font-size:17px;font-weight:700;color:var(--gray-900);margin-bottom:12px}
+.site-stats{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px}
+.site-stat{background:var(--gray-50);border-radius:8px;padding:8px 10px}
+.site-stat-lbl{font-size:10px;color:var(--gray-400);font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px}
+.site-stat-val{font-size:15px;font-weight:700;color:var(--gray-900)}
+.card-stage-strip{display:flex;gap:3px}
+.card-stage-blk{flex:1;height:6px;border-radius:3px;background:var(--gray-200);transition:background .2s}
+.card-stage-blk.done{background:var(--green)}
+.site-card-foot{padding:10px 16px;border-top:1px solid var(--gray-100);display:flex;align-items:center;justify-content:space-between}
+.site-trades-lbl{font-size:12px;color:var(--gray-400)}
+.profit-chip{font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px}
+.profit-chip.pos{background:var(--green-light);color:var(--green)}
+.profit-chip.neg{background:var(--red-light);color:var(--red)}
+.profit-chip.zero{background:var(--gray-100);color:var(--gray-500)}
+
+.add-site-card{background:#fff;border-radius:var(--r);box-shadow:var(--sh);cursor:pointer;border:2px dashed var(--gray-200);display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:160px;gap:8px;color:var(--gray-400);padding:24px;transition:border-color .15s,color .15s,box-shadow .15s}
+.add-site-card:hover{border-color:var(--blue);color:var(--blue);box-shadow:var(--shm)}
+.add-site-card .plus{font-size:30px;font-weight:300}
+.add-site-card .lbl{font-size:14px;font-weight:600}
+
+/* ══ 案場詳細 ══ */
+
+/* 四格總覽 */
+.summary-row{display:grid;gap:10px;margin-bottom:14px;grid-template-columns:repeat(2,1fr)}
+@media(min-width:580px){.summary-row{grid-template-columns:repeat(4,1fr)}}
+.sum-card{background:#fff;border-radius:var(--r);padding:12px 14px;box-shadow:var(--sh);border-left:4px solid var(--blue)}
+.sum-card.g{border-color:var(--green)}
+.sum-card.o{border-color:var(--orange)}
+.sum-card.r{border-color:var(--red)}
+.sum-card.p{border-color:var(--purple)}
+.sum-lbl{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--gray-400);margin-bottom:5px}
+.sum-val{font-size:20px;font-weight:800;color:var(--gray-900);line-height:1}
+.sum-sub{font-size:11px;color:var(--gray-400);margin-top:3px}
+.sum-sub.pos{color:var(--green);font-weight:600}
+.sum-sub.neg{color:var(--red);font-weight:600}
+
+/* ── 價格拆解卡 ── */
+.price-card{background:#fff;border-radius:var(--r);box-shadow:var(--sh);padding:16px;margin-bottom:14px}
+.price-card-title{font-size:13px;font-weight:700;color:var(--gray-700);margin-bottom:12px}
+.price-breakdown{display:flex;flex-direction:column;gap:0}
+.price-row{display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--gray-100)}
+.price-row:last-child{border-bottom:none}
+.price-row-label{font-size:13px;color:var(--gray-600);display:flex;align-items:center;gap:6px}
+.price-row-label .tag{font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px}
+.tag-add{background:var(--green-light);color:var(--green)}
+.tag-sub{background:var(--red-light);color:var(--red)}
+.tag-pct{background:var(--orange-light);color:var(--orange)}
+.price-row-val{font-size:14px;font-weight:700;color:var(--gray-800)}
+.price-row-val.add{color:var(--green)}
+.price-row-val.sub{color:var(--red)}
+.price-final-row{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;background:linear-gradient(135deg,var(--purple-light),#f0e6ff);border-radius:var(--rs);margin-top:8px}
+.price-final-label{font-size:14px;font-weight:700;color:var(--purple)}
+.price-final-val{font-size:22px;font-weight:800;color:var(--purple)}
+
+/* 折抵輸入 */
+.discount-input-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--gray-100)}
+.discount-input-row label{font-size:13px;color:var(--gray-600);white-space:nowrap;flex-shrink:0;margin:0;text-transform:none;letter-spacing:0;font-weight:500}
+.discount-input-wrap{display:flex;align-items:center;gap:6px;margin-left:auto}
+.discount-prefix{font-size:13px;color:var(--red);font-weight:700}
+.discount-input{
+  width:110px;padding:6px 10px;border:1.5px solid var(--gray-200);
+  border-radius:var(--rs);font-size:14px;font-weight:700;text-align:right;
+  color:var(--gray-800);outline:none;background:#fff;-webkit-appearance:none;
+  transition:border-color .15s;font-family:inherit;
+}
+.discount-input:focus{border-color:var(--red);box-shadow:0 0 0 3px var(--red-light)}
+
+/* ── 收款四期 ── */
+.recv-card{background:#fff;border-radius:var(--r);box-shadow:var(--sh);padding:16px;margin-bottom:14px}
+.recv-card-title{font-size:13px;font-weight:700;color:var(--gray-700);margin-bottom:12px;display:flex;align-items:center;justify-content:space-between}
+.recv-card-title span{font-size:12px;color:var(--gray-400);font-weight:500}
+.stage-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+@media(min-width:600px){.stage-grid{grid-template-columns:repeat(4,1fr)}}
+
+.stage-tile{border-radius:var(--rs);border:2px solid var(--gray-200);padding:12px 14px;cursor:pointer;transition:all .15s;user-select:none;position:relative;overflow:hidden}
+.stage-tile:hover{border-color:var(--green);background:var(--green-light)}
+.stage-tile.done{border-color:var(--green);background:var(--green-light)}
+.stage-tile.done::after{content:'✓';position:absolute;top:8px;right:10px;font-size:14px;font-weight:700;color:var(--green)}
+.stage-tile-num{font-size:10px;font-weight:700;color:var(--gray-400);text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px}
+.stage-tile-label{font-size:14px;font-weight:700;color:var(--gray-800);margin-bottom:6px}
+.stage-tile.done .stage-tile-label{color:var(--green-dark)}
+.stage-tile-pct{display:inline-block;background:var(--gray-100);color:var(--gray-500);font-size:11px;font-weight:700;padding:2px 7px;border-radius:20px;margin-bottom:6px}
+.stage-tile.done .stage-tile-pct{background:rgba(22,163,74,.15);color:var(--green-dark)}
+.stage-tile-amt{font-size:16px;font-weight:800;color:var(--gray-900)}
+.stage-tile.done .stage-tile-amt{color:var(--green-dark)}
+.stage-tile-hint{font-size:11px;color:var(--gray-400);margin-top:3px}
+
+.recv-progress-wrap{margin-top:12px}
+.recv-progress-track{height:8px;background:var(--gray-200);border-radius:4px;overflow:hidden;margin-bottom:6px}
+.recv-progress-fill{height:100%;background:linear-gradient(90deg,#16a34a,#22c55e);border-radius:4px;transition:width .4s}
+.recv-progress-labels{display:flex;justify-content:space-between;font-size:11px;color:var(--gray-500)}
+.recv-progress-labels strong{color:var(--green);font-weight:700}
+
+/* ── 工種表 ── */
+.detail-toolbar{display:flex;gap:8px;align-items:center;margin-bottom:10px}
+.section-title{font-size:13px;font-weight:700;color:var(--gray-700);margin:0;flex:1}
+.btn-add{background:var(--blue);color:#fff;border:none;padding:8px 14px;border-radius:var(--rs);font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:5px;white-space:nowrap;transition:background .15s}
+.btn-add:hover{background:var(--blue-dark)}
+.btn-danger{background:var(--red-light);color:var(--red);border:none;padding:8px 14px;border-radius:var(--rs);font-size:13px;font-weight:600;cursor:pointer;transition:background .15s}
+.btn-danger:hover{background:var(--red);color:#fff}
+
+.trades-card{background:#fff;border-radius:var(--r);box-shadow:var(--sh);overflow:hidden}
+.trades-table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+table{width:100%;border-collapse:collapse;font-size:13px;min-width:540px}
+thead th{background:var(--gray-50);color:var(--gray-500);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;padding:10px 14px;text-align:left;border-bottom:1px solid var(--gray-200);white-space:nowrap}
+th.r,td.r{text-align:right}
+tbody tr{border-bottom:1px solid var(--gray-100);transition:background .1s}
+tbody tr:last-child{border-bottom:none}
+tbody tr:hover{background:var(--gray-50)}
+tbody td{padding:12px 14px;color:var(--gray-700);vertical-align:middle}
+.trade-name{font-weight:700;color:var(--gray-900);font-size:14px}
+.trade-meta{font-size:11px;color:var(--gray-400);margin-top:2px}
+.amt{font-weight:700;font-variant-numeric:tabular-nums}
+.amt.q{color:var(--blue)}
+.amt.c{color:var(--gray-600)}
+.amt.pp{color:var(--green)}
+.amt.pn{color:var(--red)}
+.bar-wrap{display:flex;align-items:center;gap:5px;min-width:72px}
+.bar{flex:1;height:5px;background:var(--gray-200);border-radius:3px;overflow:hidden}
+.bar-fill{height:100%;border-radius:3px}
+.bar-fill.pos{background:var(--green)}
+.bar-fill.neg{background:var(--red)}
+.bar-pct{font-size:11px;font-weight:700;width:34px;text-align:right;flex-shrink:0}
+.bar-pct.pos{color:var(--green)}
+.bar-pct.neg{color:var(--red)}
+.tfoot-row td{background:var(--gray-50);font-weight:700;font-size:12px;color:var(--gray-600);padding:9px 14px;border-top:2px solid var(--gray-200)}
+.act-btn{background:none;border:none;cursor:pointer;padding:5px 7px;border-radius:6px;font-size:15px;transition:background .15s;line-height:1}
+.act-btn:hover{background:var(--gray-100)}
+.act-btn.del:hover{background:var(--red-light)}
+
+/* ── 保證金/清潔費 ── */
+.extra-card{background:#fff;border-radius:var(--r);box-shadow:var(--sh);padding:16px;margin-bottom:14px}
+.extra-card-title{font-size:13px;font-weight:700;color:var(--gray-700);margin-bottom:12px}
+.extra-fields{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media(max-width:480px){.extra-fields{grid-template-columns:1fr}}
+.extra-field-label{font-size:11px;font-weight:700;color:var(--gray-500);text-transform:uppercase;letter-spacing:.4px;margin-bottom:5px}
+.extra-field-wrap{display:flex;align-items:center;gap:6px;border:1.5px solid var(--gray-200);border-radius:var(--rs);padding:6px 10px;background:#fff;transition:border-color .15s}
+.extra-field-wrap:focus-within{border-color:var(--blue);box-shadow:0 0 0 3px var(--blue-light)}
+.extra-field-prefix{font-size:13px;color:var(--gray-400);font-weight:600;white-space:nowrap}
+.extra-field-input{flex:1;border:none;outline:none;font-size:14px;font-weight:700;text-align:right;color:var(--gray-800);background:transparent;width:0;min-width:0;-webkit-appearance:none;font-family:inherit}
+
+/* ── 追加減項目 ── */
+.co-title-row{display:flex;gap:8px;align-items:center;margin-bottom:10px;margin-top:16px}
+.co-card{background:#fff;border-radius:var(--r);box-shadow:var(--sh);overflow:hidden}
+.co-summary{display:flex;gap:16px;padding:10px 14px;background:var(--gray-50);border-top:1px solid var(--gray-200);font-size:12px;font-weight:600;flex-wrap:wrap;align-items:center}
+.co-amt-add{color:var(--green);font-weight:700}
+.co-amt-sub{color:var(--red);font-weight:700}
+.co-net-pos{color:var(--green)}
+.co-net-neg{color:var(--red)}
+
+/* ── 拖曳排序 ── */
+.drag-col{width:28px}
+.drag-handle{cursor:grab;color:var(--gray-300);font-size:18px;padding:4px 6px;border-radius:6px;line-height:1;user-select:none;display:inline-block;transition:color .15s}
+.drag-handle:hover{color:var(--gray-500);background:var(--gray-100)}
+.drag-handle:active{cursor:grabbing}
+tbody tr.dragging{opacity:.35;background:var(--blue-light)}
+tbody tr.drag-over{box-shadow:inset 0 2px 0 var(--blue),inset 0 -2px 0 var(--blue);background:var(--blue-light)}
+.move-btn{background:none;border:1px solid var(--gray-200);cursor:pointer;padding:3px 8px;border-radius:6px;font-size:14px;line-height:1;color:var(--gray-500);transition:background .15s}
+.move-btn:hover{background:var(--gray-100);border-color:var(--gray-300)}
+
+@media(max-width:599px){
+  .trades-table-wrap{overflow-x:unset}
+  table,thead,tbody,tr,td,th{display:block}
+  thead{display:none}
+  tbody tr{padding:14px;border-bottom:1px solid var(--gray-100)}
+  tbody td{padding:3px 0;border:none;display:flex;align-items:flex-start;gap:8px}
+  tbody td::before{content:attr(data-l);font-size:10px;font-weight:700;color:var(--gray-400);text-transform:uppercase;min-width:46px;flex-shrink:0;padding-top:3px}
+  td.name-td{display:block;padding-bottom:8px}
+  td.name-td::before{display:none}
+  td.act-td{justify-content:flex-end;padding-top:8px}
+  td.act-td::before{display:none}
+  .drag-col{display:none}
+  .tfoot-row td{display:flex;gap:6px}
+  .tfoot-row td::before{content:attr(data-l);font-size:10px;font-weight:700;color:var(--gray-400);min-width:46px}
+  table{min-width:unset}
+  .stage-grid{grid-template-columns:repeat(2,1fr)}
+  .price-final-val{font-size:18px}
+}
+
+.empty-trades{padding:44px 20px;text-align:center;color:var(--gray-400)}
+.empty-trades .emoji{font-size:36px;margin-bottom:10px}
+
+/* ── MODALS ── */
+.backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:200;align-items:flex-end;justify-content:center}
+@media(min-width:560px){.backdrop{align-items:center}}
+.backdrop.open{display:flex;animation:fadeIn .15s}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+.modal{background:#fff;border-radius:var(--r) var(--r) 0 0;width:100%;max-height:92vh;overflow-y:auto;box-shadow:var(--shl);animation:slideUp .2s ease-out}
+@media(min-width:560px){.modal{border-radius:var(--r);max-width:480px;max-height:88vh;animation:none}}
+@keyframes slideUp{from{transform:translateY(60px);opacity:0}to{transform:translateY(0);opacity:1}}
+.modal-hdr{display:flex;align-items:center;justify-content:space-between;padding:18px 20px 14px;border-bottom:1px solid var(--gray-100);position:sticky;top:0;background:#fff;z-index:1}
+.modal-title{font-size:17px;font-weight:700}
+.modal-x{background:var(--gray-100);border:none;width:30px;height:30px;border-radius:50%;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;color:var(--gray-600);transition:background .15s}
+.modal-x:hover{background:var(--gray-200)}
+.modal-body{padding:16px 20px}
+.modal-foot{padding:12px 20px 20px;display:flex;gap:10px;border-top:1px solid var(--gray-100)}
+.frow{margin-bottom:14px}
+.frow2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px}
+label{display:block;font-size:11px;font-weight:700;color:var(--gray-600);margin-bottom:5px;text-transform:uppercase;letter-spacing:.4px}
+input[type=text],input[type=number],select,textarea{width:100%;padding:10px 12px;border:1.5px solid var(--gray-200);border-radius:var(--rs);font-size:15px;font-family:inherit;color:var(--gray-800);outline:none;background:#fff;-webkit-appearance:none;transition:border-color .15s,box-shadow .15s}
+input:focus,select:focus,textarea:focus{border-color:var(--blue);box-shadow:0 0 0 3px var(--blue-light)}
+textarea{resize:vertical;min-height:56px}
+.hint{font-size:11px;color:var(--gray-400);margin-top:4px}
+.btn-save{flex:1;background:var(--blue);color:#fff;border:none;padding:12px;border-radius:var(--rs);font-size:15px;font-weight:700;cursor:pointer;transition:background .15s}
+.btn-save:hover{background:var(--blue-dark)}
+.btn-cancel{background:var(--gray-100);color:var(--gray-600);border:none;padding:12px 20px;border-radius:var(--rs);font-size:15px;font-weight:600;cursor:pointer;transition:background .15s}
+.btn-cancel:hover{background:var(--gray-200)}
+
+.confirm-bd{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:300;align-items:center;justify-content:center;padding:20px}
+.confirm-bd.open{display:flex;animation:fadeIn .15s}
+.confirm-box{background:#fff;border-radius:var(--r);padding:24px;max-width:300px;width:100%;box-shadow:var(--shl);text-align:center}
+.confirm-icon{font-size:38px;margin-bottom:10px}
+.confirm-title{font-size:17px;font-weight:700;margin-bottom:8px}
+.confirm-text{font-size:14px;color:var(--gray-500);margin-bottom:20px}
+.confirm-btns{display:flex;gap:10px}
+.btn-del-ok{flex:1;background:var(--red);color:#fff;border:none;padding:11px;border-radius:var(--rs);font-size:15px;font-weight:700;cursor:pointer}
+.btn-del-cancel{flex:1;background:var(--gray-100);color:var(--gray-700);border:none;padding:11px;border-radius:var(--rs);font-size:15px;font-weight:600;cursor:pointer}
+
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(70px);background:var(--gray-900);color:#fff;padding:10px 22px;border-radius:30px;font-size:14px;font-weight:500;z-index:400;transition:transform .25s,opacity .25s;opacity:0;pointer-events:none;white-space:nowrap}
+.toast.show{transform:translateX(-50%) translateY(0);opacity:1}
+
+@media print{
+  .app-header .header-actions,.btn-add,.act-btn,.detail-toolbar,.btn-danger,#loading-screen,.sync-bar{display:none!important}
+  .page{display:flex!important}
+  #page-list{display:none!important}
+}
+</style>
+</head>
+<body>
+
+<div id="loading-screen"><div class="spinner"></div><div class="loading-text">連線中…</div></div>
+<div class="sync-bar" id="sync-bar"><div class="sync-dot"></div><span id="sync-text">儲存中</span></div>
+
+<!-- ═══ PAGE 1 — 案場列表 ═══ -->
+<div class="page active" id="page-list">
+  <header class="app-header">
+    <div class="header-center">
+      <h1>🏗️ 裝修工程成本管理</h1>
+      <p id="hdr-count">載入中…</p>
+    </div>
+    <div class="header-actions">
+      <button class="btn-hdr" onclick="exportAllCSV()">📊</button>
+    </div>
+  </header>
+  <div class="content">
+    <div class="sites-grid" id="sites-grid"></div>
+  </div>
+</div>
+
+<!-- ═══ PAGE 2 — 案場詳細 ═══ -->
+<div class="page" id="page-detail">
+  <header class="app-header">
+    <button class="header-back" onclick="goList()">‹</button>
+    <div class="header-center">
+      <h1 id="detail-name">案場名稱</h1>
+      <p id="detail-sub"></p>
+    </div>
+    <div class="header-actions">
+      <button class="btn-hdr" onclick="openEditSite()">✏️</button>
+      <button class="btn-hdr" onclick="exportSiteCSV()">📊</button>
+      <button class="btn-hdr" onclick="window.print()">🖨️</button>
+    </div>
+  </header>
+  <div class="content">
+
+    <!-- 四格總覽 -->
+    <div class="summary-row">
+      <div class="sum-card p">
+        <div class="sum-lbl">🎯 最終價格</div>
+        <div class="sum-val" id="s-final">—</div>
+        <div class="sum-sub" id="s-final-sub">—</div>
+      </div>
+      <div class="sum-card g">
+        <div class="sum-lbl">💰 已收款</div>
+        <div class="sum-val" id="s-recv">—</div>
+        <div class="sum-sub" id="s-pend">—</div>
+      </div>
+      <div class="sum-card o">
+        <div class="sum-lbl">🔧 總成本</div>
+        <div class="sum-val" id="s-cost">—</div>
+        <div class="sum-sub" id="s-cpct">—</div>
+      </div>
+      <div class="sum-card r">
+        <div class="sum-lbl">📈 毛利</div>
+        <div class="sum-val" id="s-profit">—</div>
+        <div class="sum-sub" id="s-margin">—</div>
+      </div>
+    </div>
+
+    <!-- 價格拆解 -->
+    <div class="price-card">
+      <div class="price-card-title">💰 價格計算</div>
+      <div class="price-breakdown">
+        <div class="price-row">
+          <span class="price-row-label">工程總價</span>
+          <span class="price-row-val" id="p-base">—</span>
+        </div>
+        <div class="price-row">
+          <span class="price-row-label">
+            監造營銷
+            <span class="tag tag-add">＋ 5%</span>
+            <span style="font-size:11px;color:var(--gray-400)">(尾三位捨去)</span>
+          </span>
+          <span class="price-row-val add" id="p-supervision">—</span>
+        </div>
+        <!-- 折抵金額 可直接輸入 -->
+        <div class="discount-input-row">
+          <label>折抵金額 <span class="tag tag-sub" style="font-size:10px;padding:2px 7px;border-radius:20px;font-weight:700">－</span></label>
+          <div class="discount-input-wrap">
+            <span class="discount-prefix">－ $</span>
+            <input type="number" class="discount-input" id="discount-input"
+              placeholder="0" min="0" oninput="onDiscountChange()">
+          </div>
+        </div>
+      </div>
+      <div class="price-final-row">
+        <span class="price-final-label">🎯 最終價格</span>
+        <span class="price-final-val" id="p-final">—</span>
+      </div>
+    </div>
+
+    <!-- 保證金/清潔費 -->
+    <div class="extra-card">
+      <div class="extra-card-title">📋 保證金 / 清潔費（記錄用，不計入工程總價）</div>
+      <div class="extra-fields">
+        <div>
+          <div class="extra-field-label">施工保證金</div>
+          <div class="extra-field-wrap">
+            <span class="extra-field-prefix">$</span>
+            <input type="number" class="extra-field-input" id="deposit-input" placeholder="0" min="0" oninput="onExtraFeeChange('deposit')">
+          </div>
+        </div>
+        <div>
+          <div class="extra-field-label">清潔費</div>
+          <div class="extra-field-wrap">
+            <span class="extra-field-prefix">$</span>
+            <input type="number" class="extra-field-input" id="cleaning-input" placeholder="0" min="0" oninput="onExtraFeeChange('cleaningFee')">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 收款四期 -->
+    <div class="recv-card">
+      <div class="recv-card-title">
+        業主收款進度
+        <span id="recv-summary-text"></span>
+      </div>
+      <div class="stage-grid" id="stage-grid"></div>
+      <div class="recv-progress-wrap">
+        <div class="recv-progress-track">
+          <div class="recv-progress-fill" id="recv-progress-fill" style="width:0%"></div>
+        </div>
+        <div class="recv-progress-labels">
+          <span>已收 <strong id="recv-prog-amt">$0</strong></span>
+          <span id="recv-prog-pend"></span>
+          <span>最終價格 <strong id="recv-prog-total">$0</strong></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 工種 -->
+    <div class="detail-toolbar">
+      <div class="section-title">工種成本明細</div>
+      <button class="btn-danger" onclick="askDeleteSite()">🗑 刪除案場</button>
+      <button class="btn-add" onclick="openAddTrade()">＋ 新增工種</button>
+    </div>
+    <div class="trades-card" id="trades-card"></div>
+
+    <!-- 追加減項目 -->
+    <div class="co-title-row">
+      <div class="section-title">追加減項目</div>
+      <button class="btn-add" onclick="openAddChangeOrder()">＋ 新增追加減</button>
+    </div>
+    <div class="co-card" id="co-card"></div>
+  </div>
+</div>
+
+<!-- ═══ MODAL: 案場 ═══ -->
+<div class="backdrop" id="site-bd" onclick="closeSiteBd(event)">
+  <div class="modal">
+    <div class="modal-hdr">
+      <span class="modal-title" id="site-modal-title">新增案場</span>
+      <button class="modal-x" onclick="closeSiteModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="sm-id">
+      <div class="frow">
+        <label>案場名稱 *</label>
+        <input type="text" id="sm-name" placeholder="例：台北市大安區 A 案" maxlength="40">
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn-cancel" onclick="closeSiteModal()">取消</button>
+      <button class="btn-save" onclick="saveSite()">儲存</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ MODAL: 工種 ═══ -->
+<div class="backdrop" id="trade-bd" onclick="closeTradeBd(event)">
+  <div class="modal">
+    <div class="modal-hdr">
+      <span class="modal-title" id="trade-modal-title">新增工種</span>
+      <button class="modal-x" onclick="closeTradeModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="tm-id">
+      <div class="frow2">
+        <div>
+          <label>工種 *</label>
+          <select id="tm-cat">
+            <option value="">選擇工種…</option>
+            <option>拆除工程</option>
+            <option>泥作工程</option>
+            <option>水電工程</option>
+            <option>木作工程</option>
+            <option>油漆工程</option>
+            <option>鋁窗工程</option>
+            <option>鐵件工程</option>
+            <option>燈具空調</option>
+            <option>衛浴設備</option>
+            <option>廚具設備</option>
+            <option>地板工程</option>
+            <option>系統工程</option>
+            <option>窗簾工程</option>
+            <option>清潔工程</option>
+            <option>其他工程</option>
+          </select>
+        </div>
+        <div>
+          <label>自訂名稱</label>
+          <input type="text" id="tm-custom" placeholder="不在清單中？" maxlength="20">
+          <div class="hint">選擇或輸入其一即可</div>
+        </div>
+      </div>
+      <div class="frow2">
+        <div>
+          <label>報價金額 (元) *</label>
+          <input type="number" id="tm-quote" placeholder="0" min="0">
+        </div>
+        <div>
+          <label>實際成本 (元)</label>
+          <input type="number" id="tm-cost" placeholder="0" min="0">
+        </div>
+      </div>
+      <div class="frow2">
+        <div>
+          <label>廠商</label>
+          <input type="text" id="tm-vendor" placeholder="分包廠商" maxlength="20">
+        </div>
+        <div>
+          <label>備註</label>
+          <input type="text" id="tm-note" placeholder="說明…" maxlength="40">
+        </div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn-cancel" onclick="closeTradeModal()">取消</button>
+      <button class="btn-save" onclick="saveTrade()">儲存</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ MODAL: 追加減 ═══ -->
+<div class="backdrop" id="co-bd" onclick="closeCoBd(event)">
+  <div class="modal">
+    <div class="modal-hdr">
+      <span class="modal-title" id="co-modal-title">新增追加減項目</span>
+      <button class="modal-x" onclick="closeCoModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="co-id">
+      <div class="frow">
+        <label>項目名稱 *</label>
+        <input type="text" id="co-name" placeholder="例：追加臥室隔間工程" maxlength="40">
+      </div>
+      <div class="frow">
+        <label>金額 (元) *</label>
+        <input type="number" id="co-amount" placeholder="追加填正數，減項填負數（如 -5000）">
+        <div class="hint">追加工程填正數（如 30000），減項/折讓填負數（如 -5000）</div>
+      </div>
+      <div class="frow">
+        <label>備註</label>
+        <input type="text" id="co-note" placeholder="說明…" maxlength="60">
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn-cancel" onclick="closeCoModal()">取消</button>
+      <button class="btn-save" onclick="saveChangeOrder()">儲存</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ CONFIRM ═══ -->
+<div class="confirm-bd" id="confirm-bd">
+  <div class="confirm-box">
+    <div class="confirm-icon" id="confirm-icon">🗑️</div>
+    <div class="confirm-title" id="confirm-title">確定刪除？</div>
+    <div class="confirm-text" id="confirm-text"></div>
+    <div class="confirm-btns">
+      <button class="btn-del-cancel" onclick="closeConfirm()">取消</button>
+      <button class="btn-del-ok" onclick="doConfirm()">刪除</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ══════════════════════════
+//  FIREBASE
+// ══════════════════════════
+const firebaseConfig = {
+  apiKey:            "AIzaSyBP_LGYabdKwm36vmCWvZ7FlqaNp4gi-z0",
+  authDomain:        "reno-cost.firebaseapp.com",
+  projectId:         "reno-cost",
+  storageBucket:     "reno-cost.firebasestorage.app",
+  messagingSenderId: "985389380124",
+  appId:             "1:985389380124:web:8726c9c4dda8804c8e65d9"
+};
+firebase.initializeApp(firebaseConfig);
+const fsDb = firebase.firestore();
+const DOC  = fsDb.collection('reno').doc('data_v2'); // 新版用不同 key
+const LS   = 'reno_v6_cache';
+
+// ══════════════════════════
+//  CONSTANTS
+// ══════════════════════════
+const STAGES = [
+  { label:'第一期', sub:'訂金',   pct:0.40 },
+  { label:'第二期', sub:'油漆前', pct:0.20 },
+  { label:'第三期', sub:'系統前', pct:0.30 },
+  { label:'第四期', sub:'尾款',   pct:null  }, // 尾款 = 餘數
+];
+const SUPERVISION_PCT = 0.05; // 監造營銷 5%
+
+// ══════════════════════════
+//  STATE
+// ══════════════════════════
+let db            = { sites:[] };
+let currentSiteId = null;
+let confirmCb     = null;
+let syncTimer     = null;
+// 折抵金額 debounce timer
+let discountTimer = null;
+
+// ══════════════════════════
+//  PRICE CALC
+// ══════════════════════════
+// 捨去後三位
+function trunc1k(n) { return Math.floor(n / 1000) * 1000; }
+
+// 監造營銷 = 工程總價 × 5%，捨去後三位
+function calcSupervision(totalQuote) {
+  return trunc1k(totalQuote * SUPERVISION_PCT);
+}
+
+// 最終價格 = 工程總價 + 監造營銷 - 折抵
+function calcFinalPrice(totalQuote, discount) {
+  return totalQuote + calcSupervision(totalQuote) - (parseFloat(discount) || 0);
+}
+
+// 各期金額
+// 前三期：捨去後三位；尾款 = 最終價格 - 前三期總和
+function calcStageAmounts(finalPrice) {
+  const s1 = trunc1k(finalPrice * 0.40);
+  const s2 = trunc1k(finalPrice * 0.20);
+  const s3 = trunc1k(finalPrice * 0.30);
+  const s4 = finalPrice - s1 - s2 - s3;
+  return [s1, s2, s3, s4];
+}
+
+function calcRecv(finalPrice, stages, discount) {
+  const amts = calcStageAmounts(finalPrice);
+  return (stages || []).reduce((s, paid, i) => s + (paid ? amts[i] : 0), 0);
+}
+
+function siteTotals(site) {
+  const trades = site.trades || [];
+  let quote = 0, cost = 0;
+  trades.forEach(t => { quote += parseFloat(t.quote)||0; cost += parseFloat(t.cost)||0; });
+  const discount    = parseFloat(site.discount) || 0;
+  const supervision = calcSupervision(quote);
+  const finalPrice  = quote + supervision - discount;
+  const recv        = calcRecv(finalPrice, site.stages);
+  const pending     = finalPrice - recv;
+  const profit      = finalPrice - cost;
+  return { quote, cost, supervision, discount, finalPrice, recv, pending, profit, count: trades.length };
+}
+
+// ══════════════════════════
+//  SYNC STATUS
+// ══════════════════════════
+function showSync(state, text) {
+  const bar = document.getElementById('sync-bar');
+  bar.className = 'sync-bar show ' + state;
+  document.getElementById('sync-text').textContent = text;
+  clearTimeout(syncTimer);
+  if (state === 'saved') syncTimer = setTimeout(() => bar.classList.remove('show'), 2000);
+}
+
+// ══════════════════════════
+//  DATA LAYER
+// ══════════════════════════
+function cacheLocal() { try { localStorage.setItem(LS, JSON.stringify(db)); } catch(e) {} }
+function loadFromCache() {
+  try { const c = localStorage.getItem(LS); if (c) { db = JSON.parse(c); if (!db.sites) db.sites = []; } }
+  catch(e) {}
+}
+async function save() {
+  cacheLocal();
+  showSync('saving','儲存中…');
+  try { await DOC.set(db); showSync('saved','已同步 ☁️'); }
+  catch(e) { showSync('error','儲存失敗'); console.error(e); }
+}
+
+async function initFirebase() {
+  loadFromCache();
+  if (db.sites.length > 0) { document.getElementById('loading-screen').classList.add('hidden'); renderList(); }
+  try {
+    const snap = await DOC.get();
+    if (snap.exists && (snap.data()?.sites||[]).length > 0) {
+      db = snap.data(); if (!db.sites) db.sites = [];
+    } else if (db.sites.length > 0) {
+      await DOC.set(db);
+    } else {
+      db = { sites: [] };
+    }
+    cacheLocal();
+    document.getElementById('loading-screen').classList.add('hidden');
+    renderList();
+    DOC.onSnapshot(snap => {
+      if (!snap.exists) return;
+      const fresh = snap.data(); if (!fresh?.sites) return;
+      db = fresh; cacheLocal();
+      if (!document.querySelector('.backdrop.open')) {
+        if (currentSiteId) renderDetail(); else renderList();
+      }
+    });
+  } catch(e) {
+    console.error(e);
+    document.getElementById('loading-screen').classList.add('hidden');
+    if (!db.sites) db = { sites: [] };
+    renderList();
+    showToast('⚠️ 離線模式，資料暫存本機');
+  }
+}
+
+// ══════════════════════════
+//  HELPERS
+// ══════════════════════════
+function fmt(n) { if (!n && n !== 0) return '—'; return '$' + Math.round(n).toLocaleString('zh-TW'); }
+function pctStr(a, b) { return b ? Math.round(a/b*100)+'%' : '—'; }
+function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2,5); }
+function currentSite() { return db.sites.find(s => s.id === currentSiteId); }
+
+// ══════════════════════════
+//  NAVIGATION
+// ══════════════════════════
+function showPage(id) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  window.scrollTo(0, 0);
+}
+function goList()     { currentSiteId = null; renderList();   showPage('page-list'); }
+function goDetail(id) { currentSiteId = id;   renderDetail(); showPage('page-detail'); }
+
+// ══════════════════════════
+//  RENDER LIST
+// ══════════════════════════
+function renderList() {
+  const grid = document.getElementById('sites-grid');
+  document.getElementById('hdr-count').textContent =
+    db.sites.length ? `共 ${db.sites.length} 個案場` : '點擊 ＋ 建立第一個案場';
+
+  let html = db.sites.map(site => {
+    const t = siteTotals(site);
+    const pCls = t.profit > 0 ? 'pos' : t.profit < 0 ? 'neg' : 'zero';
+    const pLbl = t.profit > 0 ? `毛利 ${fmt(t.profit)}` : t.profit < 0 ? `虧損 ${fmt(Math.abs(t.profit))}` : '毛利 $0';
+    const strip = STAGES.map((_,i) => `<div class="card-stage-blk ${(site.stages||[])[i]?'done':''}"></div>`).join('');
+    const doneCount = STAGES.filter((_,i) => (site.stages||[])[i]).length;
+    return `
+    <div class="site-card" onclick="goDetail('${site.id}')">
+      <div class="site-card-bar"></div>
+      <div class="site-card-body">
+        <div class="site-card-name">${esc(site.name)}</div>
+        <div class="site-stats">
+          <div class="site-stat">
+            <div class="site-stat-lbl">最終價格</div>
+            <div class="site-stat-val">${fmt(t.finalPrice)}</div>
+          </div>
+          <div class="site-stat">
+            <div class="site-stat-lbl">待收款</div>
+            <div class="site-stat-val" style="color:${t.pending>0?'var(--orange)':'var(--green)'}">${fmt(t.pending)}</div>
+          </div>
+        </div>
+        <div style="margin-top:8px">
+          <div style="font-size:10px;color:var(--gray-400);font-weight:600;margin-bottom:4px">收款進度 ${doneCount}/4 期</div>
+          <div class="card-stage-strip">${strip}</div>
+        </div>
+      </div>
+      <div class="site-card-foot">
+        <span class="site-trades-lbl">${t.count} 項工種</span>
+        <span class="profit-chip ${pCls}">${pLbl}</span>
+      </div>
+    </div>`;
+  }).join('');
+  html += `<div class="add-site-card" onclick="openAddSite()"><div class="plus">＋</div><div class="lbl">新增案場</div></div>`;
+  grid.innerHTML = html;
+}
+
+// ══════════════════════════
+//  RENDER DETAIL
+// ══════════════════════════
+function renderDetail() {
+  const site = currentSite(); if (!site) { goList(); return; }
+  document.getElementById('detail-name').textContent = site.name;
+  const t = siteTotals(site);
+  document.getElementById('detail-sub').textContent = `${t.count} 項工種`;
+
+  // 四格
+  document.getElementById('s-final').textContent   = fmt(t.finalPrice);
+  document.getElementById('s-final-sub').textContent = `工程總價 ${fmt(t.quote)}`;
+  document.getElementById('s-recv').textContent    = fmt(t.recv);
+  document.getElementById('s-pend').textContent    = `待收 ${fmt(t.pending)}`;
+  document.getElementById('s-cost').textContent    = fmt(t.cost);
+  document.getElementById('s-cpct').textContent    = `佔最終價格 ${pctStr(t.cost, t.finalPrice)}`;
+  document.getElementById('s-profit').textContent  = fmt(t.profit);
+  const mEl = document.getElementById('s-margin');
+  mEl.textContent = `毛利率 ${t.finalPrice ? (t.profit/t.finalPrice*100).toFixed(1) : 0}%`;
+  mEl.className = 'sum-sub ' + (t.profit >= 0 ? 'pos' : 'neg');
+
+  // 價格拆解
+  document.getElementById('p-base').textContent       = fmt(t.quote);
+  document.getElementById('p-supervision').textContent = '+' + fmt(t.supervision);
+  document.getElementById('p-final').textContent      = fmt(t.finalPrice);
+  // 折抵輸入欄
+  const discEl = document.getElementById('discount-input');
+  if (document.activeElement !== discEl) {
+    discEl.value = site.discount || '';
+  }
+
+  // 保證金/清潔費
+  renderExtraFees(site);
+
+  // 收款四期
+  renderStageTiles(site, t.finalPrice);
+
+  // 工種表
+  renderTradesTable(site);
+
+  // 追加減項目
+  renderChangeOrders(site);
+}
+
+// 折抵金額變更（debounce 500ms 後存檔）
+function onDiscountChange() {
+  const site = currentSite(); if (!site) return;
+  const val = parseFloat(document.getElementById('discount-input').value) || 0;
+  site.discount = val;
+  // 即時更新顯示
+  const t = siteTotals(site);
+  document.getElementById('p-supervision').textContent = '+' + fmt(t.supervision);
+  document.getElementById('p-final').textContent       = fmt(t.finalPrice);
+  document.getElementById('s-final').textContent       = fmt(t.finalPrice);
+  document.getElementById('s-final-sub').textContent   = `工程總價 ${fmt(t.quote)}`;
+  document.getElementById('s-recv').textContent        = fmt(t.recv);
+  document.getElementById('s-pend').textContent        = `待收 ${fmt(t.pending)}`;
+  document.getElementById('s-profit').textContent      = fmt(t.profit);
+  const mEl = document.getElementById('s-margin');
+  mEl.textContent = `毛利率 ${t.finalPrice ? (t.profit/t.finalPrice*100).toFixed(1) : 0}%`;
+  mEl.className = 'sum-sub ' + (t.profit >= 0 ? 'pos' : 'neg');
+  renderStageTiles(site, t.finalPrice);
+  // debounce save
+  clearTimeout(discountTimer);
+  discountTimer = setTimeout(() => save(), 600);
+}
+
+function renderStageTiles(site, finalPrice) {
+  const stages = site.stages || [false,false,false,false];
+  const amts   = calcStageAmounts(finalPrice);
+  const recv   = amts.reduce((s, a, i) => s + ((stages[i] ? a : 0)), 0);
+  const pct    = finalPrice ? Math.round(recv / finalPrice * 100) : 0;
+
+  document.getElementById('stage-grid').innerHTML = STAGES.map((st, i) => {
+    const done = stages[i];
+    const pctLabel = st.pct ? Math.round(st.pct*100)+'%' : '餘款';
+    return `<div class="stage-tile ${done?'done':''}" onclick="toggleSiteStage(${i})">
+      <div class="stage-tile-num">${st.label}</div>
+      <div class="stage-tile-label">${st.sub}</div>
+      <div class="stage-tile-pct">${pctLabel}</div>
+      <div class="stage-tile-amt">${fmt(amts[i])}</div>
+      <div class="stage-tile-hint">${done?'已收款':'點選標記已收'}</div>
+    </div>`;
+  }).join('');
+
+  document.getElementById('recv-progress-fill').style.width = pct + '%';
+  document.getElementById('recv-prog-amt').textContent   = fmt(recv);
+  document.getElementById('recv-prog-total').textContent = fmt(finalPrice);
+  document.getElementById('recv-prog-pend').textContent  = finalPrice - recv > 0 ? `待收 ${fmt(finalPrice-recv)}` : '✓ 全部收清';
+  document.getElementById('recv-summary-text').textContent = `${stages.filter(Boolean).length} / 4 期已收`;
+}
+
+function renderTradesTable(site) {
+  const card = document.getElementById('trades-card');
+  const trades = site.trades || [];
+  if (!trades.length) {
+    card.innerHTML = `<div class="empty-trades"><div class="emoji">🔨</div><p>尚未新增工種，點擊「＋ 新增工種」開始</p></div>`;
+    return;
+  }
+  let rows = '', tQ=0, tC=0, tP=0;
+  trades.forEach((tr, idx) => {
+    const q = parseFloat(tr.quote)||0, c = parseFloat(tr.cost)||0, p = q-c;
+    const m = q ? p/q*100 : 0, mAbs = Math.min(Math.abs(m), 100);
+    const pCls = p>=0?'pp':'pn', bCls = p>=0?'pos':'neg';
+    const isFirst = idx === 0, isLast = idx === trades.length - 1;
+    tQ+=q; tC+=c; tP+=p;
+    rows += `<tr draggable="true"
+      ondragstart="onDragStart(event,${idx})"
+      ondragover="onDragOver(event,${idx})"
+      ondrop="onDrop(event,${idx})"
+      ondragend="onDragEnd(event)">
+      <td class="drag-col" data-l="">
+        <span class="drag-handle">⠿</span>
+      </td>
+      <td class="name-td" data-l="">
+        <div class="trade-name">${esc(tr.name)}</div>
+        ${tr.vendor?`<div class="trade-meta">廠商：${esc(tr.vendor)}</div>`:''}
+        ${tr.note  ?`<div class="trade-meta">${esc(tr.note)}</div>`:''}
+      </td>
+      <td class="r" data-l="報價"><span class="amt q">${fmt(q)}</span></td>
+      <td class="r" data-l="成本"><span class="amt c">${c?fmt(c):'—'}</span></td>
+      <td class="r" data-l="毛利"><span class="amt ${pCls}">${fmt(p)}</span></td>
+      <td data-l="毛利率">
+        <div class="bar-wrap">
+          <div class="bar"><div class="bar-fill ${bCls}" style="width:${mAbs}%"></div></div>
+          <span class="bar-pct ${bCls}">${Math.round(m)}%</span>
+        </div>
+      </td>
+      <td class="act-td" data-l="">
+        <button class="move-btn" onclick="moveTrade(${idx},-1)" ${isFirst?'style="opacity:.3;pointer-events:none"':''}>↑</button>
+        <button class="move-btn" onclick="moveTrade(${idx},1)"  ${isLast ?'style="opacity:.3;pointer-events:none"':''}>↓</button>
+        <button class="act-btn" onclick="openEditTrade('${tr.id}')">✏️</button>
+        <button class="act-btn del" onclick="askDeleteTrade('${tr.id}','${esc(tr.name)}')">🗑️</button>
+      </td>
+    </tr>`;
+  });
+  const tpCls = tP>=0?'pp':'pn';
+  card.innerHTML = `<div class="trades-table-wrap"><table>
+    <thead><tr><th class="drag-col"></th><th>工種</th><th class="r">報價</th><th class="r">成本</th><th class="r">毛利</th><th>毛利率</th><th></th></tr></thead>
+    <tbody>${rows}</tbody>
+    <tfoot><tr class="tfoot-row">
+      <td class="drag-col"></td>
+      <td data-l="">合計</td>
+      <td class="r" data-l="報價"><strong>${fmt(tQ)}</strong></td>
+      <td class="r" data-l="成本"><strong>${fmt(tC)}</strong></td>
+      <td class="r" data-l="毛利"><strong class="amt ${tpCls}">${fmt(tP)}</strong></td>
+      <td data-l="毛利率"><strong>${pctStr(tP,tQ)}</strong></td>
+      <td></td>
+    </tr></tfoot>
+  </table></div>`;
+}
+
+// ══════════════════════════
+//  TOGGLE STAGE
+// ══════════════════════════
+function toggleSiteStage(i) {
+  const site = currentSite(); if (!site) return;
+  if (!site.stages) site.stages = [false,false,false,false];
+  site.stages[i] = !site.stages[i];
+  save();
+  const t = siteTotals(site);
+  renderStageTiles(site, t.finalPrice);
+  document.getElementById('s-recv').textContent = fmt(t.recv);
+  document.getElementById('s-pend').textContent = `待收 ${fmt(t.pending)}`;
+  showToast(site.stages[i] ? `✅ ${STAGES[i].label}・${STAGES[i].sub} 已收款` : `↩️ ${STAGES[i].label}・${STAGES[i].sub} 取消`);
+}
+
+// ══════════════════════════
+//  SITE MODAL
+// ══════════════════════════
+function openAddSite() {
+  document.getElementById('site-modal-title').textContent = '新增案場';
+  document.getElementById('sm-id').value = '';
+  document.getElementById('sm-name').value = '';
+  document.getElementById('site-bd').classList.add('open');
+  setTimeout(() => document.getElementById('sm-name').focus(), 150);
+}
+function openEditSite() {
+  const site = currentSite(); if (!site) return;
+  document.getElementById('site-modal-title').textContent = '編輯案場';
+  document.getElementById('sm-id').value   = site.id;
+  document.getElementById('sm-name').value = site.name || '';
+  document.getElementById('site-bd').classList.add('open');
+  setTimeout(() => document.getElementById('sm-name').focus(), 150);
+}
+function closeSiteModal() { document.getElementById('site-bd').classList.remove('open'); }
+function closeSiteBd(e)   { if (e.target === document.getElementById('site-bd')) closeSiteModal(); }
+function saveSite() {
+  const name = document.getElementById('sm-name').value.trim();
+  if (!name) { showToast('⚠️ 請填寫案場名稱'); return; }
+  const id = document.getElementById('sm-id').value;
+  if (id) { const s = db.sites.find(s => s.id===id); if (s) s.name = name; }
+  else db.sites.push({ id:uid(), name, stages:[false,false,false,false], discount:0, deposit:0, cleaningFee:0, trades:[], changeOrders:[], createdAt:Date.now() });
+  save(); closeSiteModal();
+  if (id) { renderDetail(); showToast('✅ 案場已更新'); }
+  else    { renderList();   showToast('✅ 案場已新增'); }
+}
+
+// ══════════════════════════
+//  TRADE MODAL
+// ══════════════════════════
+function openAddTrade() {
+  document.getElementById('trade-modal-title').textContent = '新增工種';
+  ['tm-id','tm-cat','tm-custom','tm-quote','tm-cost','tm-vendor','tm-note'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('trade-bd').classList.add('open');
+  setTimeout(() => document.getElementById('tm-cat').focus(), 150);
+}
+function openEditTrade(id) {
+  const site = currentSite(); if (!site) return;
+  const tr = (site.trades||[]).find(t => t.id===id); if (!tr) return;
+  document.getElementById('trade-modal-title').textContent = '編輯工種';
+  document.getElementById('tm-id').value     = tr.id;
+  document.getElementById('tm-quote').value  = tr.quote  || '';
+  document.getElementById('tm-cost').value   = tr.cost   || '';
+  document.getElementById('tm-vendor').value = tr.vendor || '';
+  document.getElementById('tm-note').value   = tr.note   || '';
+  const catSel = document.getElementById('tm-cat');
+  const opts   = [...catSel.options].map(o => o.value);
+  if (opts.includes(tr.name)) { catSel.value = tr.name; document.getElementById('tm-custom').value = ''; }
+  else { catSel.value = ''; document.getElementById('tm-custom').value = tr.name || ''; }
+  document.getElementById('trade-bd').classList.add('open');
+}
+function closeTradeModal() { document.getElementById('trade-bd').classList.remove('open'); }
+function closeTradeBd(e)   { if (e.target === document.getElementById('trade-bd')) closeTradeModal(); }
+function saveTrade() {
+  const cat = document.getElementById('tm-cat').value;
+  const custom = document.getElementById('tm-custom').value.trim();
+  const name = cat || custom;
+  const quote = document.getElementById('tm-quote').value;
+  if (!name)  { showToast('⚠️ 請選擇或填寫工種'); return; }
+  if (!quote) { showToast('⚠️ 請填寫報價金額'); return; }
+  const id = document.getElementById('tm-id').value;
+  const data = { name, quote:parseFloat(quote)||0, cost:parseFloat(document.getElementById('tm-cost').value)||0,
+    vendor:document.getElementById('tm-vendor').value.trim(), note:document.getElementById('tm-note').value.trim() };
+  const site = currentSite(); if (!site) return;
+  if (!site.trades) site.trades = [];
+  if (id) { const idx = site.trades.findIndex(t => t.id===id); if (idx>=0) site.trades[idx] = {...site.trades[idx],...data}; }
+  else site.trades.push({ id:uid(), ...data });
+  save(); closeTradeModal(); renderDetail();
+  showToast(id ? '✅ 已更新' : '✅ 工種已新增');
+}
+
+// ══════════════════════════
+//  CONFIRM / DELETE
+// ══════════════════════════
+function showConfirm(icon, title, text, cb) {
+  document.getElementById('confirm-icon').textContent  = icon;
+  document.getElementById('confirm-title').textContent = title;
+  document.getElementById('confirm-text').textContent  = text;
+  confirmCb = cb; document.getElementById('confirm-bd').classList.add('open');
+}
+function closeConfirm() { document.getElementById('confirm-bd').classList.remove('open'); confirmCb = null; }
+function doConfirm()    { if (confirmCb) confirmCb(); closeConfirm(); }
+
+function askDeleteSite() {
+  const site = currentSite(); if (!site) return;
+  showConfirm('🏗️','刪除案場？',`「${site.name}」及所有工種將永久刪除。`,() => {
+    db.sites = db.sites.filter(s => s.id !== currentSiteId);
+    save(); goList(); showToast('🗑️ 案場已刪除');
+  });
+}
+function askDeleteTrade(id, name) {
+  showConfirm('🗑️','刪除工種？',`「${name}」刪除後無法復原。`,() => {
+    const site = currentSite(); if (!site) return;
+    site.trades = (site.trades||[]).filter(t => t.id !== id);
+    save(); renderDetail(); showToast('🗑️ 工種已刪除');
+  });
+}
+
+// ══════════════════════════
+//  EXPORT CSV
+// ══════════════════════════
+function csvRow(arr) { return arr.map(v => `"${String(v||'').replace(/"/g,'""')}"`).join(','); }
+
+function exportSiteCSV() {
+  const site = currentSite();
+  if (!site || !(site.trades||[]).length) { showToast('⚠️ 尚無資料'); return; }
+  const t = siteTotals(site);
+  const amts = calcStageAmounts(t.finalPrice);
+  const hdrs = ['案場','項目','金額','備註'];
+  const rows = [
+    [site.name,'工程總價',    t.quote,       ''],
+    [site.name,'監造營銷(5%)',t.supervision, '尾三位捨去'],
+    [site.name,'折抵金額',   -t.discount,    ''],
+    [site.name,'最終價格',    t.finalPrice,  ''],
+    ['','','',''],
+    ...STAGES.map((st,i) => [site.name,`${st.label}・${st.sub}`,amts[i],(site.stages||[])[i]?'已收':'未收']),
+    ['','','',''],
+    ...(site.trades||[]).map(tr => {
+      const q=parseFloat(tr.quote)||0,c=parseFloat(tr.cost)||0,p=q-c;
+      return [site.name,tr.name,q,`成本:${c} 毛利:${p} 廠商:${tr.vendor||''}`];
+    }),
+  ];
+  dl('\ufeff' + [hdrs,...rows].map(csvRow).join('\n'), `${site.name}.csv`);
+  showToast('📊 CSV 匯出成功');
+}
+
+function exportAllCSV() {
+  if (!db.sites.length) { showToast('⚠️ 尚無案場'); return; }
+  const hdrs = ['案場','工種','報價','成本','毛利','最終價格','已收','待收'];
+  const rows = [];
+  db.sites.forEach(site => {
+    const t = siteTotals(site);
+    (site.trades||[]).forEach(tr => {
+      const q=parseFloat(tr.quote)||0,c=parseFloat(tr.cost)||0,p=q-c;
+      rows.push([site.name,tr.name,q,c,p,t.finalPrice,t.recv,t.pending]);
+    });
+  });
+  dl('\ufeff'+[hdrs,...rows].map(csvRow).join('\n'),'全部案場.csv');
+  showToast('📊 全部匯出成功');
+}
+
+function dl(content, filename) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([content],{type:'text/csv;charset=utf-8;'}));
+  a.download = filename; a.click(); URL.revokeObjectURL(a.href);
+}
+
+// ══════════════════════════
+//  TOAST
+// ══════════════════════════
+let toastT;
+function showToast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.classList.add('show');
+  clearTimeout(toastT); toastT = setTimeout(() => el.classList.remove('show'), 2200);
+}
+
+// ══════════════════════════
+//  EXTRA FEES（保證金/清潔費）
+// ══════════════════════════
+function renderExtraFees(site) {
+  const depEl = document.getElementById('deposit-input');
+  const clnEl = document.getElementById('cleaning-input');
+  if (document.activeElement !== depEl) depEl.value = site.deposit || '';
+  if (document.activeElement !== clnEl) clnEl.value = site.cleaningFee || '';
+}
+
+let extraFeeTimer = null;
+function onExtraFeeChange(field) {
+  const site = currentSite(); if (!site) return;
+  const inputId = field === 'deposit' ? 'deposit-input' : 'cleaning-input';
+  site[field] = parseFloat(document.getElementById(inputId).value) || 0;
+  clearTimeout(extraFeeTimer);
+  extraFeeTimer = setTimeout(() => save(), 600);
+}
+
+// ══════════════════════════
+//  CHANGE ORDERS（追加減項目）
+// ══════════════════════════
+function renderChangeOrders(site) {
+  const card = document.getElementById('co-card');
+  const orders = site.changeOrders || [];
+  if (!orders.length) {
+    card.innerHTML = `<div class="empty-trades" style="padding:24px 20px"><p style="color:var(--gray-400);font-size:13px">尚無追加減項目，點擊「＋ 新增追加減」開始</p></div>`;
+    return;
+  }
+  let rows = '', totalAdd = 0, totalSub = 0;
+  orders.forEach(co => {
+    const amt = parseFloat(co.amount) || 0;
+    if (amt >= 0) totalAdd += amt; else totalSub += amt;
+    const isAdd = amt >= 0;
+    const cls = isAdd ? 'co-amt-add' : 'co-amt-sub';
+    const sign = isAdd ? '＋' : '－';
+    const absAmt = Math.abs(amt);
+    rows += `<tr>
+      <td class="name-td" data-l="">
+        <div class="trade-name">${esc(co.name)}</div>
+        ${co.note ? `<div class="trade-meta">${esc(co.note)}</div>` : ''}
+      </td>
+      <td class="r" data-l="金額"><span class="${cls}">${sign} $${Math.round(absAmt).toLocaleString('zh-TW')}</span></td>
+      <td class="act-td" data-l="">
+        <button class="act-btn" onclick="openEditChangeOrder('${co.id}')">✏️</button>
+        <button class="act-btn del" onclick="askDeleteChangeOrder('${co.id}','${esc(co.name)}')">🗑️</button>
+      </td>
+    </tr>`;
+  });
+  const net = totalAdd + totalSub;
+  const netCls = net >= 0 ? 'co-net-pos' : 'co-net-neg';
+  const netSign = net >= 0 ? '＋' : '－';
+  card.innerHTML = `<div class="trades-table-wrap"><table style="min-width:300px">
+    <thead><tr><th>追加減項目</th><th class="r">金額</th><th></th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table></div>
+  <div class="co-summary">
+    <span>追加小計：<span class="co-amt-add">＋ $${Math.round(totalAdd).toLocaleString('zh-TW')}</span></span>
+    <span>減項小計：<span class="co-amt-sub">－ $${Math.round(Math.abs(totalSub)).toLocaleString('zh-TW')}</span></span>
+    <span style="font-weight:700">淨額：<span class="${netCls}">${netSign} $${Math.round(Math.abs(net)).toLocaleString('zh-TW')}</span></span>
+  </div>`;
+}
+
+function openAddChangeOrder() {
+  document.getElementById('co-modal-title').textContent = '新增追加減項目';
+  ['co-id','co-name','co-amount','co-note'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('co-bd').classList.add('open');
+  setTimeout(() => document.getElementById('co-name').focus(), 150);
+}
+function openEditChangeOrder(id) {
+  const site = currentSite(); if (!site) return;
+  const co = (site.changeOrders||[]).find(c => c.id===id); if (!co) return;
+  document.getElementById('co-modal-title').textContent = '編輯追加減項目';
+  document.getElementById('co-id').value     = co.id;
+  document.getElementById('co-name').value   = co.name   || '';
+  document.getElementById('co-amount').value = co.amount != null ? co.amount : '';
+  document.getElementById('co-note').value   = co.note   || '';
+  document.getElementById('co-bd').classList.add('open');
+}
+function closeCoModal() { document.getElementById('co-bd').classList.remove('open'); }
+function closeCoBd(e)   { if (e.target === document.getElementById('co-bd')) closeCoModal(); }
+function saveChangeOrder() {
+  const name   = document.getElementById('co-name').value.trim();
+  const amount = document.getElementById('co-amount').value;
+  if (!name)   { showToast('⚠️ 請填寫項目名稱'); return; }
+  if (!amount) { showToast('⚠️ 請填寫金額'); return; }
+  const site = currentSite(); if (!site) return;
+  if (!site.changeOrders) site.changeOrders = [];
+  const id   = document.getElementById('co-id').value;
+  const data = { name, amount: parseFloat(amount)||0, note: document.getElementById('co-note').value.trim() };
+  if (id) {
+    const idx = site.changeOrders.findIndex(c => c.id===id);
+    if (idx >= 0) site.changeOrders[idx] = {...site.changeOrders[idx], ...data};
+  } else {
+    site.changeOrders.push({ id: uid(), ...data });
+  }
+  save(); closeCoModal(); renderDetail();
+  showToast(id ? '✅ 已更新' : '✅ 追加減項目已新增');
+}
+function askDeleteChangeOrder(id, name) {
+  showConfirm('🗑️','刪除追加減？',`「${name}」刪除後無法復原。`, () => {
+    const site = currentSite(); if (!site) return;
+    site.changeOrders = (site.changeOrders||[]).filter(c => c.id !== id);
+    save(); renderDetail(); showToast('🗑️ 已刪除');
+  });
+}
+
+// ══════════════════════════
+//  DRAG-AND-DROP REORDER
+// ══════════════════════════
+let dragSrcIdx = null;
+
+function onDragStart(e, idx) {
+  dragSrcIdx = idx;
+  e.currentTarget.classList.add('dragging');
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', idx);
+}
+
+function onDragOver(e, idx) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  document.querySelectorAll('#trades-card tbody tr').forEach((r, i) => {
+    r.classList.toggle('drag-over', i === idx && dragSrcIdx !== idx);
+  });
+}
+
+function onDragEnd(e) {
+  document.querySelectorAll('#trades-card tbody tr').forEach(r => {
+    r.classList.remove('dragging', 'drag-over');
+  });
+  dragSrcIdx = null;
+}
+
+function onDrop(e, dropIdx) {
+  e.preventDefault();
+  if (dragSrcIdx === null || dragSrcIdx === dropIdx) { onDragEnd(e); return; }
+  const site = currentSite(); if (!site) return;
+  const trades = site.trades || [];
+  const [moved] = trades.splice(dragSrcIdx, 1);
+  trades.splice(dropIdx, 0, moved);
+  site.trades = trades;
+  dragSrcIdx = null;
+  save(); renderDetail();
+  showToast('↕️ 順序已更新');
+}
+
+function moveTrade(idx, dir) {
+  const site = currentSite(); if (!site) return;
+  const trades = site.trades || [];
+  const newIdx = idx + dir;
+  if (newIdx < 0 || newIdx >= trades.length) return;
+  [trades[idx], trades[newIdx]] = [trades[newIdx], trades[idx]];
+  site.trades = trades;
+  save(); renderDetail();
+  showToast('↕️ 順序已更新');
+}
+
+// ══════════════════════════
+//  INIT
+// ══════════════════════════
+initFirebase();
+</script>
+</body>
+</html>
